@@ -15,3 +15,4 @@ Open the project in Android Studio and run.
 This app stores credentials in plain text and ignores SSL certificate errors for captive portals.
 Use at your own risk.
 
+FULLY MADE WITH THE HELP OF CHATGPT
