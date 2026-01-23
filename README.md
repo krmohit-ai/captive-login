@@ -1,16 +1,17 @@
-# Captive Login Android App
+# Captive Login (Android)
 
 A simple Android app to open a captive portal page in a WebView and auto-fill saved credentials.
 
 ## Features
-- WebView captive portal
-- Saved portal URL
-- Multiple profiles (plain-text)
+- Open captive portal in WebView
+- Editable saved portal URL
+- Multiple credential profiles (plain text)
 - Fill + Login button
 
 ## Build
-Open in Android Studio and run.
+Open the project in Android Studio and run.
 
 ## Disclaimer
-This app stores credentials in plain text and ignores SSL errors for captive portals.
+This app stores credentials in plain text and ignores SSL certificate errors for captive portals.
 Use at your own risk.
+
