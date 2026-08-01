@@ -1,9 +1,22 @@
 package com.example.captivelogin
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.Uri
+import android.net.wifi.WifiManager
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -18,6 +31,36 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+
+    private val connectivityManager by lazy {
+        getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+
+    private val wifiManager by lazy {
+        applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+    }
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            runOnUiThread { updateConnectivityUI() }
+        }
+
+        override fun onLost(network: Network) {
+            runOnUiThread { updateConnectivityUI() }
+        }
+
+        override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+            runOnUiThread { updateConnectivityUI() }
+        }
+    }
+
+    private val loginReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == LoginTileService.ACTION_QUICK_LOGIN) {
+                binding.btnFillLogin.performClick()
+            }
+        }
+    }
 
     private val prefsName = "creds"
     private val keyProfiles = "profiles_json"
@@ -64,6 +107,30 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.webView.loadUrl(savedUrl)
+
+        // Initial UI update
+        updateConnectivityUI()
+
+        // Register network callback
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
+
+        // Register Quick Login receiver
+        val loginFilter = IntentFilter(LoginTileService.ACTION_QUICK_LOGIN)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(loginReceiver, loginFilter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(loginReceiver, loginFilter)
+        }
+
+        // Check if started from Quick Settings Tile
+        if (intent?.getBooleanExtra("trigger_login", false) == true) {
+            binding.root.postDelayed({
+                binding.btnFillLogin.performClick()
+            }, 1000) // Small delay to ensure WebView is ready
+        }
 
         // Save Portal URL button
         binding.btnSaveUrl.setOnClickListener {
@@ -179,6 +246,77 @@ class MainActivity : AppCompatActivity() {
             """.trimIndent()
 
             binding.webView.evaluateJavascript(js, null)
+        }
+
+        // Wi-Fi Toggle
+        binding.btnWifi.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10+ requires using Settings Panel for toggling Wi-Fi
+                val intent = Intent(Settings.Panel.ACTION_WIFI)
+                startActivity(intent)
+            } else {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                wifiManager.isWifiEnabled = !wifiManager.isWifiEnabled
+                toast("Toggling Wi-Fi...")
+            }
+        }
+
+        // Mobile Data Settings
+        binding.btnData.setOnClickListener {
+            val intent = Intent(Settings.ACTION_DATA_ROAMING_SETTINGS)
+            startActivity(intent)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        } catch (e: Exception) {
+            // Callback might not be registered
+        }
+        try {
+            unregisterReceiver(loginReceiver)
+        } catch (e: Exception) {
+            // Receiver might not be registered
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("trigger_login", false)) {
+            binding.btnFillLogin.performClick()
+        }
+    }
+
+    private fun updateConnectivityUI() {
+        // Wi-Fi Status
+        val isWifiEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // On Android 10+, wifiManager.isWifiEnabled is still reliable for status check
+            wifiManager.isWifiEnabled
+        } else {
+            @Suppress("DEPRECATION")
+            wifiManager.isWifiEnabled
+        }
+
+        val wifiColor = if (isWifiEnabled) "#16A34A" else "#9CA3AF"
+        binding.btnWifi.backgroundTintList = ColorStateList.valueOf(Color.parseColor(wifiColor))
+
+        // Mobile Data Status
+        val isDataEnabled = isMobileDataEnabled()
+        val dataColor = if (isDataEnabled) "#16A34A" else "#9CA3AF"
+        binding.btnData.backgroundTintList = ColorStateList.valueOf(Color.parseColor(dataColor))
+    }
+
+    private fun isMobileDataEnabled(): Boolean {
+        return try {
+            Settings.Global.getInt(contentResolver, "mobile_data", 0) == 1
+        } catch (e: Exception) {
+            val network = connectivityManager.activeNetwork
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true
         }
     }
 
